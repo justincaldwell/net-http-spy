@@ -15,20 +15,23 @@ module Net
 
     def initialize(*args, &block)
       self.class.http_logger_options ||= {}
-      defaults =  {:body => false, :trace => false, :verbose => false, :limit => -1}
+      defaults =  {:body => false, :trace => false, :limit => -1, :blacklist_terms => []}
       self.class.http_logger_options = (self.class.http_logger_options == :default) ? defaults : self.class.http_logger_options
       @logger_options = defaults.merge(self.class.http_logger_options)
       @params_limit = @logger_options[:params_limit] || @logger_options[:limit]
       @body_limit   = @logger_options[:body_limit]   || @logger_options[:limit]
-      self.class.http_logger.info "CONNECT: #{args.inspect}" if !@logger_options[:verbose]
+      @ignore = !@logger_options[:blacklist_terms].detect {|term| /#{term}/ =~ args[0] }.nil?
+
+      self.class.http_logger.info "CONNECT: #{args.inspect}" unless @ignore
 
       old_initialize(*args, &block)
-      @debug_output   = self.class.http_logger if @logger_options[:verbose]
+      @debug_output   = self.class.http_logger unless @ignore
     end
 
 
     def request(*args, &block)
-      unless started? || @logger_options[:verbose]
+      @ignore =  true if !@logger_options[:blacklist_terms].detect {|term| /#{term}/ =~ args[0].path }.nil?
+      unless started? || @ignore
         req = args[0].method
         self.class.http_logger.info "#{req} #{args[0].path}"
       end
@@ -36,7 +39,7 @@ module Net
       time_started = Time.now
       result = old_request(*args, &block)
       time_taken = Time.now - time_started
-      unless started? || @logger_options[:verbose]
+      unless started? || @ignore
 
         self.class.http_logger.info "PARAMS #{CGI.parse(args[0].body).inspect[0..@params_limit]} " if args[0].body && req != 'CONNECT'
         self.class.http_logger.info "TRACE: #{caller.reverse}" if @logger_options[:trace]
